@@ -1,0 +1,75 @@
+{
+  "fetchedAt": "2026-09-16T11:32:09.173Z",
+  "fetchedAtMs": 1789558329173,
+  "seconds": 0.2,
+  "requests": 10,
+  "source": "Transport for London Unified API",
+  "sourceUrl": "https://api.tfl.gov.uk/",
+  "attribution": [
+    "Powered by TfL Open Data",
+    "Contains OS data © Crown copyright and database rights 2016",
+    "Geomni UK Map data © and database rights [2019]"
+  ],
+  "licence": "TfL's Transport Data Service terms, based on the Open Government Licence v2.0",
+  "licenceUrl": "https://tfl.gov.uk/corporate/terms-and-conditions/transport-data-service",
+  "stations": [
+    {
+      "id": "940GZZLUKSX",
+      "name": "King's Cross St. Pancras",
+      "mode": "tube"
+    },
+    {
+      "id": "940GZZLUOXC",
+      "name": "Oxford Circus",
+      "mode": "tube"
+    },
+    {
+      "id": "940GZZLUWLO",
+      "name": "Waterloo",
+      "mode": "tube"
+    },
+    {
+      "id": "940GZZLULVT",
+      "name": "Liverpool Street",
+      "mode": "tube"
+    },
+    {
+      "id": "940GZZLUBNK",
+      "name": "Bank",
+      "mode": "tube"
+    },
+    {
+      "id": "940GZZLUVIC",
+      "name": "Victoria",
+      "mode": "tube"
+    },
+    {
+      "id": "910GLIVST",
+      "name": "Liverpool Street (Elizabeth line and Overground)",
+      "mode": "rail"
+    },
+    {
+      "id": "910GHGHI",
+      "name": "Highbury & Islington (Overground)",
+      "mode": "rail"
+    }
+  ],
+  "counts": {
+    "lines": 19,
+    "arrivals": 367,
+    "predictions": 367,
+    "bikes": 800,
+    "perStation": {
+      "940GZZLUKSX": 68,
+      "940GZZLUOXC": 33,
+      "940GZZLUWLO": 36,
+      "940GZZLULVT": 44,
+      "940GZZLUBNK": 46,
+      "940GZZLUVIC": 22,
+      "910GLIVST": 70,
+      "910GHGHI": 48
+    }
+  },
+  "firstDue": "2026-09-16T11:30:59.000Z",
+  "lastDue": "2026-09-16T13:31:00.000Z"
+}

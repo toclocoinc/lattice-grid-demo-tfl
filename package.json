@@ -1,0 +1,19 @@
+{
+  "name": "lattice-grid-demo-tfl",
+  "version": "1.0.0",
+  "description": "A live dashboard of London's tube, rail and cycle hire, from the TfL Unified API.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "snapshot": "node tools/build-snapshot.mjs",
+    "verify": "node tools/verify.mjs"
+  },
+  "dependencies": {
+    "@toclocoinc/lattice-grid": "^1.62.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

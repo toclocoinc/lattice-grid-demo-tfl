@@ -1,0 +1,347 @@
+/* The page around the grid. The grid brings its own stylesheet. */
+
+:root {
+  --ink: #101828;
+  --ink-soft: #475467;
+  --line: #e4e7ec;
+  --page: #f7f8fa;
+  --panel: #ffffff;
+  --accent: #0019a8;
+  --live: #1b8a3f;
+  --alarm: #b42318;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font: 14px/1.5 "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  padding: 16px 20px 12px;
+}
+
+/* The masthead */
+
+.head {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.head h1 {
+  color: var(--accent);
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0 0 3px;
+}
+
+.lede {
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: 92ch;
+}
+
+.head-note {
+  align-items: center;
+  color: var(--ink-soft);
+  display: flex;
+  font-size: 12px;
+  gap: 10px;
+}
+
+.pill {
+  align-items: center;
+  background: var(--accent);
+  border-radius: 999px;
+  color: #fff;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 6px;
+  letter-spacing: 0.02em;
+  padding: 4px 10px;
+  text-transform: uppercase;
+}
+
+/* The pulse that shows a poll landed. */
+.dot {
+  background: #9fe0b4;
+  border-radius: 50%;
+  height: 7px;
+  transition: background 0.2s ease, transform 0.2s ease;
+  width: 7px;
+}
+
+.dot.beat {
+  background: #ffffff;
+  transform: scale(1.5);
+}
+
+.freshness {
+  max-width: 64ch;
+  text-align: right;
+}
+
+.freshness.failed {
+  color: var(--alarm);
+  font-weight: 600;
+}
+
+/* The tiles: three panels, one per table */
+
+.kpi-strip {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 5fr) minmax(0, 4fr);
+}
+
+.kpi-group {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 11px 9px;
+}
+
+.kpi-group-label {
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.kpi-panel {
+  min-width: 0;
+}
+
+/* A tile for a reading that is words rather than a number. */
+.kpi-named {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 6px 12px;
+}
+
+.kpi-named-value {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kpi-named-label {
+  color: var(--ink-soft);
+  font-size: 12px;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Charts */
+
+.chart-wrap {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  height: 230px;
+}
+
+.chart-box {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 4px;
+}
+
+.chart-error {
+  color: var(--alarm);
+  font-size: 12px;
+  padding: 10px;
+}
+
+/* The controls */
+
+.actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.actions > [hidden] {
+  display: none;
+}
+
+.actions-label {
+  color: var(--ink-soft);
+  font-size: 12px;
+  margin-right: 2px;
+}
+
+.actions-gap {
+  width: 14px;
+}
+
+.station-select {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.action {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 11px;
+}
+
+.action:hover {
+  background: #eef2f7;
+  border-color: #c7d2e0;
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.action.toggle.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Tabs and panes */
+
+.tabs-host {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  /* Enough for a dozen rows however short the window; the page scrolls
+     rather than the table shrinking to nothing. */
+  min-height: 360px;
+  overflow: hidden;
+  padding: 10px 12px 12px;
+}
+
+.tabs-host [role='tabpanel'] {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tabs-host [role='tabpanel'] > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Waiting and failure */
+
+.loading {
+  margin: auto;
+  max-width: 480px;
+  text-align: center;
+}
+
+.loading h1 {
+  color: var(--accent);
+  font-size: 20px;
+  margin: 0 0 8px;
+}
+
+.loading-message {
+  color: var(--ink-soft);
+  margin: 0 0 14px;
+}
+
+.loading-bar {
+  background: var(--line);
+  border-radius: 999px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.loading-fill {
+  background: var(--accent);
+  height: 100%;
+  transition: width 0.2s ease;
+  width: 0;
+}
+
+/* The credit lines */
+
+.foot {
+  border-top: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 12px;
+  padding-top: 10px;
+}
+
+.foot p {
+  margin: 0 0 2px;
+}
+
+.foot .attribution {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.foot a {
+  color: var(--accent);
+}
+
+/* Said when the saved copy is standing in for data that could not be fetched. */
+.notice[hidden] {
+  display: none;
+}
+
+.notice {
+  background: #fdf3e3;
+  border: 1px solid #f0d9a8;
+  border-radius: 7px;
+  color: #6b4d12;
+  margin: 8px 0 0;
+  padding: 6px 10px;
+}
