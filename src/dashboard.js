@@ -761,7 +761,6 @@ export function buildDashboard({
     grid: built.bikesGrid,
     rowKey: 'key',
     fields: ['bikes', 'empty', 'installed'],
-    columns: 4,
     ariaLabel: 'Cycle hire figures',
     tiles: [
       { id: 'bikes', label: 'Bikes available', aggregation: 'sum', field: 'bikes', format: 'number' },
