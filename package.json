@@ -11,7 +11,7 @@
     "verify": "node tools/verify.mjs"
   },
   "dependencies": {
-    "@toclocoinc/lattice-grid": "^1.62.0"
+    "@toclocoinc/lattice-grid": "^1.62.1"
   },
   "engines": {
     "node": ">=22"

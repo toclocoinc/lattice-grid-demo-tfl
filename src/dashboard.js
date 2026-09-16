@@ -483,8 +483,10 @@ export function buildDashboard({
          * expected arrival. A row is therefore evicted twenty seconds after
          * its train was due, on the grid's own timer, whether or not another
          * poll has landed; a prediction for a train still on its way has a
-         * negative age and is never touched. Filtering, sorting and grouping
-         * all work on the open stream (1.62.0), which is what makes the
+         * negative age and is never touched, and a prediction the feed
+         * re-times is aged from the due time it now carries, so a delay keeps
+         * a train and an earlier arrival lets it go. Filtering, sorting and
+         * grouping all work on the open stream, which is what makes the
          * station selector and the Group-by buttons possible on a windowed
          * table. The stream carries nothing itself: every row reaches it
          * through the router, as an upsert. It is never sent a delete,
@@ -569,9 +571,9 @@ export function buildDashboard({
    *
    * Lines and bike points are a full list each time, so a key that has gone
    * from the list is deleted. Arrivals are never deleted: a prediction that
-   * TfL has withdrawn is upserted with `withdrawn: true` and its due time
-   * pulled to now, so the grid's own window takes it out twenty seconds
-   * later, the same way it takes out a train that arrived. A poll answered
+   * TfL has withdrawn is upserted with `withdrawn: true` and its last due
+   * time, so the grid's own window takes it out twenty seconds after that,
+   * the same way it takes out a train that arrived. A poll answered
    * from TfL's cache can carry an older set than the poll before, so a key
    * only counts as withdrawn when the new answer was predicted later than the
    * row was.
@@ -594,10 +596,10 @@ export function buildDashboard({
       seen.add(row.key);
       if (held.has(row.key)) {
         updated += 1;
-        /* Still predicted by TfL, still held here, but no longer in the
-           table: the window took it out at its first due time although a
-           later poll had moved that time on (F-1317-3). It comes back as a
-           new row, and is counted so the readout can say so. */
+        /* Still predicted by TfL and still on its way, but no longer in the
+           table: it was due, the window let it go, and this answer predicts
+           it later still. It comes back as a new row, and is counted so the
+           readout can say so. */
         if (kind === 'arrival' && row.due > now && built.arrivalsGrid && !built.arrivalsGrid.rows.byKey(row.key)) readded += 1;
       } else {
         added += 1;
@@ -622,9 +624,9 @@ export function buildDashboard({
            predicted later than that reading: withdrawn. An answer older than
            the reading (TfL's cache) says nothing about it. The row is marked
            and keeps its last due time; the window takes it out twenty
-           seconds after that, as it would had the train arrived. (Pulling
-           the due time to now would not hurry it: the grid reads the time a
-           row was first inserted with, F-1317-3.) */
+           seconds after that, as it would had the train arrived. The last
+           time TfL predicted is what a reader saw, so it is what the row
+           keeps and what it leaves on. */
         if (row.predictedAt >= newest) continue;
         const pulled = { ...row, withdrawn: true, location: WITHDRAWN_TEXT, timeToStation: 0 };
         held.set(key, pulled);

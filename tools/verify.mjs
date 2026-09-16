@@ -9,9 +9,15 @@
  *     Node from the saved files rather than read back off the page;
  *   - the three charts drew marks, not empty axes;
  *   - choosing a station narrows the arrivals and the tiles follow;
- *   - grouping works on the open arrivals stream;
+ *   - grouping works on the open arrivals stream, after the window has
+ *     evicted rows: only the live trains, once each, and a group's members
+ *     can be rolled up with `rows.leavesOf`;
  *   - the rolling window takes a train out of the table once it has
  *     arrived, keeps one that has not, and the arrived log keeps both;
+ *   - the window reads each row's current due time, so a train moved into
+ *     the past leaves and a train delayed ten minutes stays;
+ *   - a train the feed re-sends with new values shows them, in the cells,
+ *     on the page and in the figures;
  *   - a prediction TfL withdraws is marked and leaves through the same
  *     window;
  *   - the three credit lines TfL's terms require are on the page word for
@@ -123,7 +129,6 @@ function freePort() {
 
 const failures = [];
 const notes = [];
-const known = [];
 
 /** Record a check and its outcome. */
 function check(ok, description, detail) {
@@ -132,21 +137,6 @@ function check(ok, description, detail) {
   } else {
     failures.push(`${description}${detail ? ` (${detail})` : ''}`);
     notes.push(`  FAIL ${description}${detail ? ` (${detail})` : ''}`);
-  }
-}
-
-/**
- * Record a check against a known grid defect. It is printed with the
- * finding's id, and counted separately, so the defect stays visible on
- * every run without blocking a deployment the demo has not caused; the day
- * the grid fixes it the line turns to "ok" and the finding can be retired.
- */
-function knownDefect(id, ok, description, detail) {
-  if (ok) {
-    notes.push(`  ok   ${description}${detail ? ` (${detail})` : ''} [${id} no longer reproduces]`);
-  } else {
-    known.push(`${id}: ${description}${detail ? ` (${detail})` : ''}`);
-    notes.push(`  KNOWN ${id} ${description}${detail ? ` (${detail})` : ''}`);
   }
 }
 
@@ -198,6 +188,16 @@ function arrivalFigures(arrivals, now) {
   const due5 = arrivals.filter((row) => !row.withdrawn && row.due >= now && row.due - now <= 5 * 60 * 1000);
   const arrived = arrivals.filter((row) => row.due <= now && now - row.due <= ARRIVED_LOG_MS);
   return { strict: strict.length, slack: slack.length, due5: due5.length, arrived: arrived.length };
+}
+
+/**
+ * A `due` reading from the grid, in milliseconds. A datetime column answers
+ * with the grid's wall-clock text, to the second, or with the number the feed
+ * carried, so both are read back the way the page itself reads them and
+ * compared to the second.
+ */
+function msOf(value) {
+  return typeof value === 'number' ? value : Date.parse(value);
 }
 
 /** Two figures agree exactly, or within a tolerance. */
@@ -592,10 +592,59 @@ try {
   check(window20.settled.logExpiring && window20.settled.logFresh, 'the arrived log, with its ten-minute window, keeps both', JSON.stringify(window20.settled));
 
   /* A row added to the open stream after its first chunk: what the grid
-     reads for its cells against what the row carries (F-1317-4). */
+     reads for its cells against what the row carries. */
   const lateAdd = await evaluate(`(() => { const d = window.__tflDemo; const r = d.arrivalsGrid.rows.byKey('window-check-fresh'); return r ? { data: r.data.due, value: d.arrivalsGrid.rows.value(r.key, 'due'), text: d.arrivalsGrid.rows.text(r.key, 'due'), towards: d.arrivalsGrid.rows.text(r.key, 'towards'), dataTowards: r.data.towards } : null; })()`);
   console.log(`  late-added row reads: ${JSON.stringify(lateAdd)}`);
-  knownDefect('F-1317-4', !!lateAdd && Date.parse(lateAdd.value) === lateAdd.data && lateAdd.towards === lateAdd.dataTowards, 'a row added to the open stream in a later chunk reads its own cells', `text() due ${lateAdd && lateAdd.text}, towards "${lateAdd && lateAdd.towards}" for a row whose data says ${lateAdd && new Date(lateAdd.data).toISOString()} "${lateAdd && lateAdd.dataTowards}"`);
+  check(
+    !!lateAdd && near(msOf(lateAdd.value), lateAdd.data, 1000) && lateAdd.towards === lateAdd.dataTowards,
+    'a row added to the open stream in a later chunk reads its own cells',
+    `text() due ${lateAdd && lateAdd.text}, towards "${lateAdd && lateAdd.towards}" for a row whose data says ${lateAdd && new Date(lateAdd.data).toISOString()} "${lateAdd && lateAdd.dataTowards}"`,
+  );
+
+  /* ---- a train the feed re-sends with new values ---- */
+
+  /*
+   * A poll that moves a train's destination and due time is an upsert on a
+   * key the stream already holds. The new values have to be what the cells
+   * read, what the row on screen says, and what the bound figures panel
+   * sees, without waiting for another poll.
+   */
+  const resent = await evaluate(`(async () => {
+    const d = window.__tflDemo;
+    const row = d.arrivalsGrid.rows.byKey('window-check-fresh');
+    const before = { towards: d.arrivalsGrid.rows.text(row.key, 'towards'), due: d.arrivalsGrid.rows.text(row.key, 'due'), value: d.arrivalsGrid.rows.value(row.key, 'due'), index: row.index };
+    const due = Date.now() + 900000;
+    d.router.apply([{ op: 'upsert', row: { ...row.data, towards: 'Re-sent check', destination: 'Re-sent check', due, dueMinute: '00:09' } }]);
+    await new Promise((r) => setTimeout(r, 400));
+    d.kpis.arrivals.refresh();
+    let kpiSeen = 0;
+    d.kpis.arrivals.rows.forEach((r) => { if (r && r.towards === 'Re-sent check') kpiSeen += 1; });
+    d.arrivalsGrid.scroll.toCell('window-check-fresh', 'towards', 'center');
+    await new Promise((r) => setTimeout(r, 400));
+    const cell = (col) => [...document.querySelectorAll('.lattice [data-key="window-check-fresh"] [data-col="' + col + '"]')].map((c) => c.textContent.trim());
+    return {
+      before,
+      due,
+      towards: d.arrivalsGrid.rows.text('window-check-fresh', 'towards'),
+      text: d.arrivalsGrid.rows.text('window-check-fresh', 'due'),
+      value: d.arrivalsGrid.rows.value('window-check-fresh', 'due'),
+      data: d.arrivalsGrid.rows.byKey('window-check-fresh').data.towards,
+      index: d.arrivalsGrid.rows.byKey('window-check-fresh').index,
+      kpiSeen,
+      painted: cell('towards'),
+      paintedDue: cell('due'),
+    };
+  })()`);
+  console.log(`  re-sent row: was ${JSON.stringify(resent.before)}, now towards "${resent.towards}" due ${resent.text} (value ${JSON.stringify(resent.value)}); painted ${JSON.stringify(resent.painted)} ${JSON.stringify(resent.paintedDue)}; the figures panel sees it ${resent.kpiSeen} time(s); its place in the sort: ${resent.before.index} -> ${resent.index}`);
+  check(resent.towards === 'Re-sent check' && resent.data === 'Re-sent check', 'a train the feed re-sends reads its new destination through the grid', `cell "${resent.towards}", row data "${resent.data}", was "${resent.before.towards}"`);
+  check(near(msOf(resent.value), resent.due, 1000), 'a train the feed re-sends reads its new due time through the grid', `cell ${JSON.stringify(resent.value)} against ${new Date(resent.due).toISOString()}, was ${resent.before.due}`);
+  check(resent.painted.length > 0 && resent.painted.every((t) => t === 'Re-sent check'), 'the re-sent train shows its new destination on the page', resent.painted.join(' | ') || 'the row was not painted');
+  check(
+    resent.paintedDue.length > 0 && resent.paintedDue.every((t) => t === resent.text) && resent.text !== resent.before.due,
+    'the re-sent train shows its new due time on the page',
+    `${resent.paintedDue.join(' | ') || 'the row was not painted'}, was ${resent.before.due}`,
+  );
+  check(resent.kpiSeen === 1, 'the bound figures panel sees the re-sent values', `${resent.kpiSeen} row(s) carry the new destination`);
 
   /* ---- a prediction TfL withdraws is marked ---- */
 
@@ -622,17 +671,19 @@ try {
   check(withdrawn.marked && withdrawn.marked.withdrawn === true && /withdrawn/i.test(withdrawn.marked.location) && withdrawn.marked.dueKept, 'the withdrawn prediction is marked and keeps its due time', JSON.stringify(withdrawn.marked));
   check(withdrawn.stillLogged, 'the arrived log still holds it, and the chart leaves it out as withdrawn');
 
-  /* ---- the window reads the due time a row was first inserted with (F-1317-3) ---- */
+  /* ---- the window reads the due time a row currently carries ---- */
 
   /*
-   * Two probes through the router. The first moves the withdrawn check
-   * row's due time deep into the past: a window that read the row's current
-   * clock would take it out within the slack. The second adds a train due in
-   * three seconds and then, like a poll reporting a delay, moves its due
-   * time ten minutes out: a window that read the current clock would keep
-   * it. Neither happens: the grid ages a row from the value it was inserted
-   * with, so an early train lingers and a delayed one is evicted while TfL
-   * still predicts it (and the next poll puts it back).
+   * Two trains go in through the router, both well inside the window: one
+   * due in ten minutes, one due in three seconds. Then, as a poll would, one
+   * is re-timed into the past (a train that has already gone) and the other
+   * ten minutes out (a delay). The window reads the time each row now
+   * carries, so the first is taken out within the slack although it was
+   * admitted due in ten minutes, and the second is kept although it would
+   * have aged out three seconds after it arrived.
+   *
+   * The rows that are expected to leave are only ever asked about by key,
+   * never dereferenced: by the time the check reads them they are gone.
    */
   const retimed = await evaluate(`(async () => {
     const d = window.__tflDemo;
@@ -641,53 +692,113 @@ try {
     const base = { kind: 'arrival', predictionId: null, vehicleId: 'check', station: ${JSON.stringify(ksx.id)}, stationName: ${JSON.stringify(ksx.name)},
       lineId: 'victoria', lineName: 'Victoria', mode: 'Tube', platform: 'Check', direction: '', towards: 'Delay check', destination: 'Delay check',
       location: 'A check', timeToStation: 180, predictedAt: now, fetchedAt: now, withdrawn: false, count: 1 };
-    const early = d.arrivalsGrid.rows.byKey('window-check-fresh').data;
+    const evictedBefore = d.status.arrivalsEvicted;
     d.router.apply([
-      { op: 'upsert', row: { ...early, due: now - GRACE - 5000 } },
+      { op: 'upsert', row: { ...base, key: 'window-check-early', due: now + 600000, dueMinute: '00:04' } },
       { op: 'upsert', row: { ...base, key: 'window-check-delayed', due: now + 3000, dueMinute: '00:02' } },
     ]);
     await new Promise((r) => setTimeout(r, 300));
-    d.router.apply([{ op: 'upsert', row: { ...base, key: 'window-check-delayed', due: now + 600000, dueMinute: '00:03' } }]);
-    await new Promise((r) => setTimeout(r, 300));
-    const dueRead = { early: d.arrivalsGrid.rows.byKey('window-check-fresh').data.due < now, delayed: d.arrivalsGrid.rows.byKey('window-check-delayed').data.due > now + 500000 };
+    const earlyRow = d.arrivalsGrid.rows.byKey('window-check-early');
+    const delayedRow = d.arrivalsGrid.rows.byKey('window-check-delayed');
+    const admitted = {
+      early: !!earlyRow && earlyRow.data.due > now + 500000,
+      delayed: !!delayedRow && delayedRow.data.due < now + 10000,
+    };
+    /* The re-timing: one into the past, one ten minutes out. */
+    d.router.apply([
+      { op: 'upsert', row: { ...base, key: 'window-check-early', due: now - GRACE - 5000, dueMinute: '00:05' } },
+      { op: 'upsert', row: { ...base, key: 'window-check-delayed', due: now + 600000, dueMinute: '00:03' } },
+    ]);
+    await new Promise((r) => setTimeout(r, 200));
+    const delayedAfter = d.arrivalsGrid.rows.byKey('window-check-delayed');
+    const landed = { delayed: !!delayedAfter && delayedAfter.data.due > now + 500000 };
     await new Promise((r) => setTimeout(r, 3000 + GRACE + ${Math.round(SLACK_MS)} + 500));
-    return { dueRead, earlyGone: !d.arrivalsGrid.rows.byKey('window-check-fresh'), delayedHeld: !!d.arrivalsGrid.rows.byKey('window-check-delayed') };
+    return {
+      admitted,
+      landed,
+      earlyGone: !d.arrivalsGrid.rows.byKey('window-check-early'),
+      delayedHeld: !!d.arrivalsGrid.rows.byKey('window-check-delayed'),
+      evicted: d.status.arrivalsEvicted - evictedBefore,
+    };
   })()`);
   console.log(`  re-timed: ${JSON.stringify(retimed)}`);
-  check(retimed.dueRead.early && retimed.dueRead.delayed, 'both updates landed on the rows', JSON.stringify(retimed.dueRead));
-  knownDefect('F-1317-3', retimed.earlyGone, 'a row whose due time is moved into the past leaves the window', `gone: ${retimed.earlyGone}`);
-  knownDefect('F-1317-3', retimed.delayedHeld, 'a row whose due time is moved ten minutes out stays in the window', `held: ${retimed.delayedHeld}`);
+  check(retimed.admitted.early && retimed.admitted.delayed, 'both check trains were admitted with the due times they carried', JSON.stringify(retimed.admitted));
+  check(retimed.landed.delayed, 'the delay landed on the row', `due moved ten minutes out: ${retimed.landed.delayed}`);
+  check(retimed.earlyGone, 'a train re-timed into the past leaves the window, though it was admitted due in ten minutes', `gone: ${retimed.earlyGone}, ${retimed.evicted} evictions counted meanwhile`);
+  check(retimed.delayedHeld, 'a train delayed by ten minutes stays in the window, though it was admitted due in three seconds', `held: ${retimed.delayedHeld}`);
 
   /* ---- grouping on the open stream ---- */
 
   /*
    * Done after the window checks on purpose: the table has now evicted
-   * rows, and grouping an open stream that has evicted rows is where the
-   * grid goes wrong (F-1317-1). The tiles stay right.
+   * rows, so this groups a stream that has aged rows out. Only the live
+   * trains may appear, once each, and a group's members must be readable
+   * with `rows.leavesOf` so a host can roll a group up itself.
+   *
+   * The window keeps working while this runs, so a train can age out
+   * between the reading before and the reading after. The counts are
+   * therefore held to that range rather than to one number. A table that
+   * showed a train twice, or brought an evicted one back, would land well
+   * outside it, and the keys are checked for both besides.
    */
+  const liveBefore = await evaluate("({ total: window.__tflDemo.arrivalsGrid.rows.totalCount(), trains: window.__tflDemo.kpis.arrivals.value('trains') })");
   await evaluate("window.__tflDemo.arrivalsGrid.columns.group(['lineName'])");
   await sleep(900);
   const grouped = await evaluate(`(() => {
     const d = window.__tflDemo;
+    const g = d.arrivalsGrid;
     let groups = 0;
-    let leaves = 0;
-    d.arrivalsGrid.rows.expandAll();
-    d.arrivalsGrid.rows.forEach((r) => { if (r && r.group) groups += 1; else if (r && r.data && r.data.key) leaves += 1; });
-    return { groups, leaves, match: d.arrivalsGrid.rows.matchCount(), total: d.arrivalsGrid.rows.totalCount(), trains: d.kpis.arrivals.value('trains'), resurrected: !!d.arrivalsGrid.rows.byKey('window-check-expiring') };
+    const leafKeys = [];
+    const groupKeys = [];
+    g.rows.expandAll();
+    g.rows.forEach((r) => {
+      if (r && r.group) { groups += 1; groupKeys.push({ key: r.key, leafCount: r.leafCount }); }
+      else if (r && r.data && r.data.key) leafKeys.push(r.data.key);
+    });
+    /* Roll each group up from its own members, the way a host would. */
+    let leavesOfTotal = 0;
+    let emptyGroups = 0;
+    const leavesOfKeys = [];
+    for (const group of groupKeys) {
+      const members = g.rows.leavesOf(group.key) || [];
+      if (!members.length) emptyGroups += 1;
+      leavesOfTotal += members.length;
+      for (const m of members) if (m && m.data) leavesOfKeys.push(m.data.key);
+    }
+    const sameCount = groupKeys.filter((group) => (g.rows.leavesOf(group.key) || []).length === group.leafCount).length;
+    return {
+      groups,
+      leaves: leafKeys.length,
+      distinct: new Set(leafKeys).size,
+      evictedBack: leafKeys.filter((k) => k === 'window-check-expiring' || k === 'window-check-early').length,
+      byKeyEvicted: !!g.rows.byKey('window-check-expiring') || !!g.rows.byKey('window-check-early'),
+      match: g.rows.matchCount(),
+      total: g.rows.totalCount(),
+      trains: d.kpis.arrivals.value('trains'),
+      leavesOfTotal,
+      leavesOfDistinct: new Set(leavesOfKeys).size,
+      emptyGroups,
+      sameCount,
+    };
   })()`);
   await evaluate('window.__tflDemo.arrivalsGrid.columns.group([])');
   await sleep(500);
   const ungrouped = await evaluate("({ rows: window.__tflDemo.arrivalsGrid.rows.count(), total: window.__tflDemo.arrivalsGrid.rows.totalCount(), resurrected: !!window.__tflDemo.arrivalsGrid.rows.byKey('window-check-expiring') })");
-  console.log(`  grouped by line: ${grouped.groups} groups, ${grouped.leaves} leaves, match ${grouped.match}, total ${grouped.total}, tile ${grouped.trains}; evicted key back: ${grouped.resurrected}; ungrouped again: ${JSON.stringify(ungrouped)}`);
+  /* The live count can only fall while this runs, so anything between the
+     reading after and the reading before is the live count. */
+  const liveRange = (n) => n >= ungrouped.total && n <= liveBefore.total;
+  console.log(`  grouped by line: ${grouped.groups} groups, ${grouped.leaves} leaves (${grouped.distinct} distinct), match ${grouped.match}, total ${grouped.total}, tile ${grouped.trains}; leavesOf returned ${grouped.leavesOfTotal} rows (${grouped.leavesOfDistinct} distinct) over ${grouped.groups} groups, ${grouped.emptyGroups} empty, ${grouped.sameCount} agreeing with leafCount`);
+  console.log(`  live rows ${liveBefore.total} before grouping, ${ungrouped.total} after ungrouping; an evicted key is back: ${grouped.evictedBack > 0 || grouped.byKeyEvicted}`);
   check(grouped.groups > 0, 'grouping the open arrivals stream by line produces group rows', `${grouped.groups} groups`);
-  check(grouped.trains === ungrouped.total, 'the rows under collapsed groups still count towards the tiles', `${grouped.trains} of ${ungrouped.total}`);
+  check(liveRange(grouped.leaves), 'grouping the open stream shows the live trains and no more', `${grouped.leaves} leaves for between ${ungrouped.total} and ${liveBefore.total} live rows`);
+  check(grouped.leaves === grouped.distinct, 'grouping the open stream shows each live train once', `${grouped.leaves} leaves, ${grouped.distinct} distinct keys`);
+  check(grouped.evictedBack === 0 && !grouped.byKeyEvicted, 'grouping brings back none of the trains the window evicted', `${grouped.evictedBack} evicted keys among the leaves`);
+  check(liveRange(grouped.total), "the grouped table's own count is the live rows", `${grouped.total} against between ${ungrouped.total} and ${liveBefore.total}`);
+  check(liveRange(grouped.trains), 'the rows under the groups still count towards the tiles', `${grouped.trains} against between ${ungrouped.total} and ${liveBefore.total}`);
+  check(grouped.leavesOfTotal > 0 && grouped.emptyGroups === 0, "rows.leavesOf answers on the grouped stream, for every group", `${grouped.leavesOfTotal} rows over ${grouped.groups} groups, ${grouped.emptyGroups} groups empty`);
+  check(grouped.sameCount === grouped.groups, "rows.leavesOf returns as many members as the group heading counts", `${grouped.sameCount} of ${grouped.groups} groups agree`);
+  check(liveRange(grouped.leavesOfDistinct), 'rolling every group up covers the live trains, once each', `${grouped.leavesOfDistinct} distinct members of ${grouped.leavesOfTotal}`);
   check(!ungrouped.resurrected && ungrouped.total <= grouped.total, 'ungrouping restores the live rows', `${ungrouped.total} rows`);
-  knownDefect(
-    'F-1317-1',
-    grouped.leaves === ungrouped.total && grouped.total === ungrouped.total && !grouped.resurrected,
-    'grouping the open stream shows only the live rows, once each, and none the window evicted',
-    `${grouped.leaves} leaves and total ${grouped.total} for ${ungrouped.total} live rows; an evicted train is back: ${grouped.resurrected}`,
-  );
   await shoot('03-grouped-by-line');
 
   noErrors('saved copy, after the checks');
@@ -833,8 +944,8 @@ try {
       return { stale, checked, examples, buckets, shown, agree }; })()`);
     console.log(`  cells read against row data: ${mismatch.stale} of ${mismatch.checked} rows disagree; ${mismatch.examples.join(' | ')}`);
     console.log(`  arrivals chart: ${JSON.stringify(mismatch.shown)} against the rows it was given ${JSON.stringify(mismatch.buckets)}`);
-    knownDefect('F-1317-4', mismatch.stale === 0, 'every arrival reads its own cells through the grid', `${mismatch.stale} of ${mismatch.checked} rows read another row's due; ${mismatch.examples.join(' | ')}`);
-    knownDefect('F-1317-4', mismatch.agree, 'the arrivals-per-minute chart buckets the rows it was given by their own minute', `chart ${JSON.stringify(mismatch.shown)}, rows ${JSON.stringify(mismatch.buckets)}`);
+    check(mismatch.checked > 0 && mismatch.stale === 0, 'live: every arrival reads its own cells through the grid', `${mismatch.stale} of ${mismatch.checked} rows read another row's due; ${mismatch.examples.join(' | ')}`);
+    check(Object.keys(mismatch.buckets).length > 0 && mismatch.agree, 'live: the arrivals-per-minute chart buckets the rows it was given by their own minute', `chart ${JSON.stringify(mismatch.shown)}, rows ${JSON.stringify(mismatch.buckets)}`);
     noErrors('live');
     await shoot('05-live');
   }
@@ -858,11 +969,6 @@ try {
 console.log('\nChecks:');
 for (const note of notes) console.log(note);
 console.log(`\nReal time: ${Math.round((Date.now() - realStart) / 1000)}s`);
-
-if (known.length) {
-  console.log(`\nKnown grid defects still reproducing (${known.length}), reported and left visible:`);
-  for (const entry of known) console.log(`  - ${entry}`);
-}
 
 if (failures.length) {
   console.error(`\nFAILED (${failures.length}):`);

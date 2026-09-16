@@ -52,10 +52,12 @@ has landed. That is the grid's own window: the table's source is a stream
 (`source: { mode: 'stream', maxAge: 20000, ageBy: 'due' }`), and `ageBy` names
 the clock the window reads, each prediction's own expected arrival. A train
 still on its way has a negative age and is never touched; a train that was due
-twenty seconds ago is evicted by the grid's timer. Filtering, sorting and
-grouping work on the open stream (grid 1.62.0), which is what makes the
-station selector and the Group-by buttons possible on a windowed table. The
-readout at the top counts the evictions the grid reports.
+twenty seconds ago is evicted by the grid's timer. The clock is the one each
+row carries *now*, so when a poll reports a delay the train stays, and when a
+poll brings a train in early it goes when it has been. Filtering, sorting and
+grouping work on the open stream, which is what makes the station selector and
+the Group-by buttons possible on a windowed table. The readout at the top
+counts the evictions the grid reports.
 
 **Why the grid's window and not one kept by the page.** The window is a fact
 about each row's own timestamp, and the grid can evict on a timer while the
@@ -67,9 +69,9 @@ because that is not a fact about a timestamp. The page handles that through
 the same window: a prediction that is missing from an answer predicted later
 than the page last saw it is upserted with `withdrawn: true`, greyed, and
 left to the window, which takes it out twenty seconds after its last due time,
-the same way it takes out a train that arrived. (The page cannot hurry that by
-pulling the due time to now: the window reads the time a row was first
-inserted with, F-1317-3 below.) A live stream refuses deletes, so nothing is
+the same way it takes out a train that arrived. The last time TfL predicted is
+what a reader saw, so it is the time the row keeps and the time it leaves on.
+A live stream refuses deletes, so nothing is
 ever deleted from the arrivals route. TfL answers from an edge cache that
 can be up to a minute old, so an answer can be *older* than the one before;
 a key missing from an older answer is not withdrawn, which is why the
@@ -236,9 +238,15 @@ area by area and the severity chart line by line; narrows the arrivals to
 King's Cross and insists the tiles and the next-train reading followed; pushes
 two trains through the router, one due in ten minutes and one due nineteen
 seconds ago, and insists the window kept the first and took the second out
-while the arrived log kept both; answers a poll without one train and insists
-it was marked withdrawn and left through the window; groups the open stream;
-insists the three credit lines are on the page word for word; and insists
+while the arrived log kept both; re-times two more, one into the past and one
+ten minutes out, and insists the first left and the second stayed; re-sends a
+train with a new destination and a new due time and insists the cells, the row
+on screen and the bound figures panel all show them; answers a poll without one
+train and insists it was marked withdrawn and left through the window; groups
+the open stream after those evictions and insists it shows the live trains once
+each, none of the evicted ones, and that `rows.leavesOf()` returns every
+group's members; insists the three credit lines are on the page word for word;
+and insists
 there is no watermark on localhost. It then blocks the API in the browser,
 opens the default page, and insists the saved copy is on screen and says why.
 None of that needs the internet, so it gates the deployment. `--live` opens
@@ -248,42 +256,28 @@ insists the tiles agree; then waits for three arrivals polls and insists that
 new predictions arrived, existing ones were updated in place, and trains aged
 out through the grid's window, with the keys before and after.
 
-## Known grid defects, left visible
+## The version of the grid this needs
 
-The verification reports these under their finding ids rather than failing
-on them, so they stay visible on every run and turn to "ok" the day the grid
-fixes them.
+Lattice Grid **1.62.1 or newer**, which is what `package.json` asks for. The
+Arrivals tab is one long stream with a rolling window on it, and four things
+that release does are what make it a dashboard rather than a demonstration:
 
-- **F-1317-1.** Grouping an open stream after its window has evicted rows
-  brings the evicted rows back and shows the live ones twice: on the
-  Arrivals tab, once a few trains have aged out, "Group by line" shows the
-  trains that arrived as well as the ones still due, each still-due train
-  under its line twice, and the status bar counts the live rows plus every
-  row the stream ever held. The tiles stay right. Ungrouping restores the
-  table. Grouping *before* any eviction is fine.
-- **F-1317-2.** `rows.leavesOf()` on a grouped open stream returns no rows
-  and warns that the grid "groups elsewhere", so a host cannot roll up a
-  group's members on a windowed table.
-- **F-1317-3.** The rolling window reads the `ageBy` value a row was
-  *first inserted with*. An update that moves a train's due time later
-  (a delay) does not keep it: it is evicted twenty seconds after its first
-  predicted time while TfL still predicts it, and the next poll puts it
-  back as a new row; the readout counts those. An update that moves the due
-  time earlier does not hurry it out either.
-- **F-1317-4.** A row added to an open stream through `rows.apply({ add })`
-  after the stream's first chunk reads, through the grid's own cell reads
-  (`rows.value`, `rows.text`, the projection a bound KPI panel or a chart
-  sees), the values of the row at the *same position in the first chunk*:
-  with three rows in the first chunk and two added later, the fourth row
-  reads the first row's cells and the fifth the second's, while `row.data`
-  on each carries the right values. An update to the row corrects it; rows
-  the stream yields itself are right; a memory source over the same batches
-  is right throughout. On the live page a train that appears after the
-  first load shows another train's due time and destination until the next
-  poll updates it, and the arrivals-per-minute chart, which buckets each
-  train by the minute the grid reads for it, puts such a train under the
-  wrong minute. The verification reads every arrival both ways and reports
-  the disagreement under this id.
+- **A train that turns up after the page opened shows its own time and
+  destination.** Predictions arrive every thirty seconds, long after the
+  table was first drawn, and each one reads as itself the moment it lands.
+- **A train the feed re-sends with new values shows the new values at once.**
+  A platform change or a new predicted time is on screen, in the headline
+  figures and in the chart on the next poll, not the one after.
+- **Grouping a windowed table shows what is in it.** Group the arrivals by
+  line after some trains have aged out and you get the trains still due,
+  once each, and none of the ones that have gone; a group can be rolled up
+  from its own members with `rows.leavesOf()`.
+- **A train that is delayed stays; a train that is early goes.** The window
+  ages each row from the time it carries now, so a poll that moves a
+  prediction moves its place in the window with it.
+
+One thing to know: a train whose predicted time changes shows the new time
+immediately, and keeps the place it already had in the sort.
 
 ## Licence
 
