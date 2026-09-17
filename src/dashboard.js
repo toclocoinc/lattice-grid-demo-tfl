@@ -70,7 +70,7 @@ function dueText(due, now = Date.now()) {
  * back into milliseconds before anything does arithmetic on it.
  */
 function dueOf(row) {
-  return typeof row.due === 'number' ? row.due : Date.parse(row.due);
+  return Date.parse(row.due);
 }
 
 /** A stream source that carries nothing itself: every row reaches it through `rows.apply`. */

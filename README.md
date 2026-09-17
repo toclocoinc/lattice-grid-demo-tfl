@@ -258,7 +258,7 @@ out through the grid's window, with the keys before and after.
 
 ## The version of the grid this needs
 
-Lattice Grid **1.62.1 or newer**, which is what `package.json` asks for. The
+Lattice Grid **1.63.0 or newer**, which is what `package.json` asks for. The
 Arrivals tab is one long stream with a rolling window on it, and four things
 that release does are what make it a dashboard rather than a demonstration:
 
