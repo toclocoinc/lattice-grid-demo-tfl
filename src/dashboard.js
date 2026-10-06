@@ -1114,6 +1114,11 @@ export function buildDashboard({
     ),
   );
   footer.append(line);
+  const creditLine = el('p', null, 'Built with ');
+  const creditLink = el('a', null, 'Lattice Grid');
+  creditLink.href = 'https://www.latticegrid.dev/realtime-applications/';
+  creditLine.append(creditLink);
+  footer.append(creditLine);
   root.append(footer);
 
   /* The opening view. */
